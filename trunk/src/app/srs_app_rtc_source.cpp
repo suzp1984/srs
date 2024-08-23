@@ -1775,6 +1775,20 @@ srs_error_t SrsRtcFrameBuilder::packet_video_rtmp(const uint16_t start, const ui
 
     if (0 == nb_payload) {
         srs_warn("empty nalu");
+
+        header_sn_ = end + 1;
+        uint16_t tail_sn = 0;
+        int sn = find_next_lost_sn(header_sn_, tail_sn);
+        if (-1 == sn) {
+            if (check_frame_complete(header_sn_, tail_sn)) {
+                err = packet_video_rtmp(header_sn_, tail_sn);
+            }
+        } else if (-2 == sn) {
+            return srs_error_new(ERROR_RTC_RTP_MUXER, "video cache is overflow");
+        } else {
+            lost_sn_ = sn;
+        }
+
         return err;
     }
 

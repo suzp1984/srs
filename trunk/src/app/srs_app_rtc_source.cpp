@@ -1774,6 +1774,52 @@ srs_error_t SrsRtcFrameBuilder::packet_video_rtmp(const uint16_t start, const ui
     }
 
     if (0 == nb_payload) {
+        srs_trace("packet_video_rtmp empty nalu: %d -> %d", start, end);
+        for (uint16_t i = 0; i < (uint16_t)cnt; ++i) {
+            uint16_t sn = start + i;
+            uint16_t index = cache_index(sn);
+            SrsRtpPacket* pkt = cache_video_pkts_[index].pkt;
+
+            // fix crash when pkt->payload() if pkt is nullptr;
+            if (!pkt) {
+                srs_warn("SrsRtpPacket is empty at %d, %d", i, sn);
+                continue;
+            }
+
+            // calculate nalu len
+            SrsRtpFUAPayload2* fua_payload = dynamic_cast<SrsRtpFUAPayload2*>(pkt->payload());
+            if (fua_payload) {
+                srs_trace("RTP is SrsRtpFUAPayload2 at %d, %d", i, sn);
+            }
+            if (fua_payload && fua_payload->size > 0) {
+                if (fua_payload->start) {
+                    nb_payload += 1 + 4;
+                }
+                nb_payload += fua_payload->size;
+                continue;
+            }
+
+            SrsRtpSTAPPayload* stap_payload = dynamic_cast<SrsRtpSTAPPayload*>(pkt->payload());
+            if (stap_payload) {
+                srs_trace("RTP is SrsRtpSTAPPayload at %d, %d", i, sn);
+                for (int j = 0; j < (int)stap_payload->nalus.size(); ++j) {
+                    SrsSample* sample = stap_payload->nalus.at(j);
+                    if (sample->size > 0) {
+                        nb_payload += 4 + sample->size;
+                    }
+                }
+                continue;
+            }
+
+            SrsRtpRawPayload* raw_payload = dynamic_cast<SrsRtpRawPayload*>(pkt->payload());
+            if (raw_payload) {
+                srs_trace("RTP is SrsRtpRawPayload at %d, %d", i, sn);
+            }
+            if (raw_payload && raw_payload->nn_payload > 0) {
+                nb_payload += 4 + raw_payload->nn_payload;
+                continue;
+            }
+        }
         srs_warn("empty nalu");
         return err;
     }
@@ -2683,7 +2729,8 @@ void SrsRtcVideoRecvTrack::on_before_decode_payload(SrsRtpPacket* pkt, SrsBuffer
 
     uint8_t v = (uint8_t)(buf->head()[0] & kNalTypeMask);
     pkt->nalu_type = SrsAvcNaluType(v);
-
+//    srs_trace("on_before_decode_payload: rtp nalu type %d", v);
+    
     if (v == kStapA) {
         *ppayload = new SrsRtpSTAPPayload();
         *ppt = SrsRtspPacketPayloadTypeSTAP;
@@ -2691,6 +2738,7 @@ void SrsRtcVideoRecvTrack::on_before_decode_payload(SrsRtpPacket* pkt, SrsBuffer
         *ppayload = new SrsRtpFUAPayload2();
         *ppt = SrsRtspPacketPayloadTypeFUA2;
     } else {
+        srs_trace("on_before_decode_payload: SrsRtpRawPayload rtp nal type %d", v);
         *ppayload = new SrsRtpRawPayload();
         *ppt = SrsRtspPacketPayloadTypeRaw;
     }

@@ -158,6 +158,7 @@ enum SrsMp4BoxBrand {
     SrsMp4BoxBrandMSDH = 0x6d736468, // 'msdh'
     SrsMp4BoxBrandMSIX = 0x6d736978, // 'msix'
     SrsMp4BoxBrandHEV1 = 0x68657631, // 'hev1'
+    SrsMp4BoxBrandCMAF = 0x636d6661, // 'cmaf'
 };
 
 // The context to dump.

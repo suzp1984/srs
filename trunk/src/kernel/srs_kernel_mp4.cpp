@@ -5793,18 +5793,37 @@ srs_error_t SrsMp4SampleManager::write(SrsMp4TrackFragmentBox *traf, uint64_t dt
     SrsMp4TrackFragmentRunBox *trun = traf->trun();
     trun->flags_ = SrsMp4TrunFlagsDataOffset | SrsMp4TrunFlagsSampleDuration | SrsMp4TrunFlagsSampleSize | SrsMp4TrunFlagsSampleFlag | SrsMp4TrunFlagsSampleCtsOffset;
 
-    SrsMp4Sample *previous = NULL;
-
+    // ISO_IEC_14496-12-base-format-2012.pdf, 8.8.8.1 page 57
+    // Because trun->flags_ has not include SrsMp4TrunFlagsFirstSample(0x000004),
+    // so trun->first_sample_flags_ is not present, and each SrsMp4TrunEntry has sample_flags_.
+    // ISO_IEC_14496-12-base-format-2012.pdf, 8.8.3.1 page 53 define the sample_flags_'s layout.
+    // int(32) sample_flags = {
+    //    bit(4)  reserved = 0;
+    //    int(2)  is_leading;
+    //    int(2)  sample_depends_on;
+    //    int(2)  sample_is_depends_on;
+    //    int(2)  sample_has_redundancy;
+    //    bit(3)  sample_padding_value;
+    //    bit(1)  sample_is_non_sync_sample;
+    //    int(16) sample_degradation_priority;
+    // }
+    // ISO_IEC_14496-12-base-format-2012.pdf, 8.6.4.1, 8.6.4.3 page 41 define the sample_flags_'s values.
+    // sample_depends_on == 1: this sample does depend on others;
+    // sample_depends_on == 2: this sample does not depend on others;
     vector<SrsMp4Sample *>::iterator it;
     for (it = samples_.begin(); it != samples_.end(); ++it) {
         SrsMp4Sample *sample = *it;
         SrsMp4TrunEntry *entry = new SrsMp4TrunEntry(trun);
 
-        if (!previous) {
-            previous = sample;
-            entry->sample_flags_ = 0x02000000;
+        if (sample->type_ == SrsFrameTypeVideo) {
+            if (sample->frame_type_ == SrsVideoAvcFrameTypeKeyFrame) {
+                entry->sample_flags_ = 0x02000000; // sample_is_depended_on=2, others depend on this.
+            } else {
+                entry->sample_flags_ = 0x01000000; // sample_is_depended_on=1, this depends on others.
+            }
         } else {
-            entry->sample_flags_ = 0x01000000;
+            // For audio, all samples are sync samples.
+            entry->sample_flags_ = 0x02000000;
         }
 
         vector<SrsMp4Sample *>::iterator iter = (it + 1);
@@ -7054,9 +7073,9 @@ srs_error_t SrsMp4M2tsInitEncoder::write(SrsFormat *format, bool video, int tid)
     if (true) {
         SrsUniquePtr<SrsMp4FileTypeBox> ftyp(new SrsMp4FileTypeBox());
 
-        ftyp->major_brand_ = SrsMp4BoxBrandISO5;
-        ftyp->minor_version_ = 512;
-        ftyp->set_compatible_brands(SrsMp4BoxBrandISO6, SrsMp4BoxBrandMP41);
+        ftyp->major_brand_ = SrsMp4BoxBrandMP42;
+        ftyp->minor_version_ = 0;
+        ftyp->set_compatible_brands(SrsMp4BoxBrandISO6, SrsMp4BoxBrandMP41, SrsMp4BoxBrandCMAF);
 
         if ((err = srs_mp4_write_box(writer_, ftyp.get())) != srs_success) {
             return srs_error_wrap(err, "write ftyp");
@@ -7303,9 +7322,9 @@ srs_error_t SrsMp4M2tsInitEncoder::write(SrsFormat *format, int v_tid, int a_tid
     if (true) {
         SrsUniquePtr<SrsMp4FileTypeBox> ftyp(new SrsMp4FileTypeBox());
 
-        ftyp->major_brand_ = SrsMp4BoxBrandMP42; // SrsMp4BoxBrandISO5;
-        ftyp->minor_version_ = 512;
-        ftyp->set_compatible_brands(SrsMp4BoxBrandISO6, SrsMp4BoxBrandMP41);
+        ftyp->major_brand_ = SrsMp4BoxBrandMP42;
+        ftyp->minor_version_ = 0;
+        ftyp->set_compatible_brands(SrsMp4BoxBrandISO6, SrsMp4BoxBrandMP41, SrsMp4BoxBrandCMAF);
 
         if ((err = srs_mp4_write_box(writer_, ftyp.get())) != srs_success) {
             return srs_error_wrap(err, "write ftyp");
